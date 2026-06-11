@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wheel of Suspense 🎡</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>🎡 Wheel of Suspense</h1>
+    <button id="muteBtn" class="icon-btn" title="Toggle sound">🔊</button>
+  </header>
+
+  <main class="layout">
+    <!-- ===== Left panel: names ===== -->
+    <aside class="panel">
+      <div class="panel-head">
+        <h2>Participants</h2>
+        <span id="nameCount" class="count-pill">0</span>
+      </div>
+      <textarea id="namesInput" spellcheck="false"
+        placeholder="One name per line&#10;Amparo&#10;Lucas&#10;Maria&#10;...">Amparo
+Lucas
+Maria
+Diego
+Sofia
+Mateo
+Valentina
+Hugo</textarea>
+      <div class="panel-actions">
+        <button id="shuffleBtn" class="ghost-btn">🔀 Shuffle</button>
+        <button id="sortBtn" class="ghost-btn">🔤 Sort</button>
+        <button id="clearBtn" class="ghost-btn danger">🗑 Clear</button>
+      </div>
+
+      <div class="panel-head lists-head">
+        <h2>Saved lists</h2>
+        <button id="saveListBtn" class="mini-btn save-trigger" title="Save current participants as a list">💾 Save</button>
+      </div>
+      <div id="saveForm" class="save-form hidden">
+        <input id="saveNameInput" type="text" maxlength="40" placeholder="List name… e.g. Dev team" />
+        <button id="saveConfirmBtn" class="primary-btn small">Save</button>
+      </div>
+      <ul id="savedLists" class="saved-lists"></ul>
+
+      <div class="panel-head history-head">
+        <h2>Winners</h2>
+        <button id="clearHistoryBtn" class="mini-btn" title="Clear history">✕</button>
+      </div>
+      <ul id="historyList" class="history"></ul>
+    </aside>
+
+    <!-- ===== Wheel ===== -->
+    <section class="stage">
+      <div class="wheel-wrap">
+        <div class="pointer"></div>
+        <canvas id="wheel"></canvas>
+        <button id="spinBtn" class="hub-btn">SPIN</button>
+      </div>
+      <p class="hint">Click <strong>SPIN</strong> (or press <kbd>Space</kbd>) to find out who destiny picks…</p>
+    </section>
+  </main>
+
+  <!-- ===== Commentary overlay (style class is swapped each spin) ===== -->
+  <div id="commentary" class="commentary" aria-live="polite"></div>
+  <div id="flash" class="flash"></div>
+
+  <!-- ===== Winner modal ===== -->
+  <div id="winnerOverlay" class="winner-overlay">
+    <canvas id="confetti"></canvas>
+    <div class="winner-card">
+      <div class="winner-label">🎉 THE WHEEL HAS SPOKEN 🎉</div>
+      <div id="winnerName" class="winner-name"></div>
+      <div class="winner-actions">
+        <button id="againBtn" class="primary-btn">Spin again</button>
+        <button id="removeBtn" class="ghost-btn">Remove &amp; spin</button>
+        <button id="closeBtn" class="ghost-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
