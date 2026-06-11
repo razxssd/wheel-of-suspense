@@ -23,15 +23,14 @@ const LINES = {
     "Round and round it goes!!",
   ],
   tease: [
-    "We are seeing {name} almost get chosen!!",
-    "Pay attention {name}.. 👀",
-    "{name} is looking VERY nervous right now...",
-    "Could it be {name}?!",
-    "Don't celebrate just yet, {name}...",
-    "The wheel seems to like {name} today!",
-    "Ooooh, {name} just dodged it!",
-    "{name}, do you feel lucky?? 🍀",
-    "Wait... is it slowing near {name}?!",
+    "It's anyone's game right now!! 👀",
+    "Someone's destiny is being decided...",
+    "The tension is UNBEARABLE...",
+    "Who will it be?? NOBODY knows!!",
+    "I've never seen a wheel THIS dramatic!!",
+    "Hold tight... this could be ANYONE!",
+    "The wheel is keeping its secret... 🤫",
+    "Don't blink now!!",
   ],
   final: [
     "IT'S SLOWING DOWN... {name} IN SIGHT!!",
@@ -467,10 +466,10 @@ const commentary = {
     this.lastLine = "";
     this.step = 0;
     this.dismissed = false;
-    // The outcome is decided when the spin starts, so the last call-out
-    // can genuinely foreshadow it: usually the winner, sometimes the
-    // near-miss neighbour for a fake-out.
-    this.finalName = Math.random() < 0.6 ? winnerName : neighborName;
+    // The outcome is decided when the spin starts; the named call-out is
+    // a true coin flip between the winner and the near-miss neighbour,
+    // so hearing a name reveals nothing.
+    this.finalName = Math.random() < 0.5 ? winnerName : neighborName;
     // Only 2-3 lines per spin, all within the first ~60% of the spin —
     // then the commentary fades and the wheel finishes in silence.
     this.schedule = Math.random() < 0.5 ? [0.05, 0.42] : [0.05, 0.3, 0.55];
@@ -495,11 +494,12 @@ const commentary = {
   // t = 0..1 spin progress; called every frame from the spin loop
   update(t) {
     if (this.step < this.schedule.length && t >= this.schedule[this.step]) {
+      // A named line only appears as the 3rd message of 3-line spins;
+      // 2-line spins stay fully generic.
       const isLast = this.step === this.schedule.length - 1;
-      const phase = this.step === 0 ? "hype" : isLast ? "final" : "tease";
-      const idx = currentIndex();
-      const liveName = idx >= 0 ? state.names[idx] : "";
-      const name = phase === "final" ? this.finalName : liveName;
+      const isFinal = isLast && this.schedule.length === 3;
+      const phase = this.step === 0 ? "hype" : isFinal ? "final" : "tease";
+      const name = phase === "final" ? this.finalName : "";
       this.show(this.pickLine(LINES[phase], name), phase);
       this.step++;
     } else if (this.step >= this.schedule.length && t >= this.hideAt) {
