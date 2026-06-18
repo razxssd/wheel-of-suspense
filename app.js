@@ -107,6 +107,7 @@ function parseNames() {
   localStorage.setItem("wheel.names", namesInput.value);
   state.highlight = null; // indexes shift when the list changes
   drawWheel();
+  syncActiveList(); // keep the active saved list up to date
   renderSavedLists();
 }
 
@@ -115,8 +116,29 @@ function setNames(arr) {
   parseNames();
 }
 
+// Obviously-fake placeholder names used only as a last-resort fallback (no
+// saved lists on the server and nothing cached locally). They're randomized so
+// it's instantly clear the wheel loaded the fallback rather than a real team.
+const DEFAULT_NAME_POOL = [
+  "Anonymous Alpaca", "Mystery Guest", "Random Rascal", "Placeholder Pete",
+  "Nobody McNobody", "Sample Sally", "John Doe", "Jane Doe", "Test Dummy",
+  "Captain Nobody", "Unnamed Hero", "Some Stranger", "Totally Real Person",
+  "Guest of Honour",
+];
+function randomDefaults(n = 6) {
+  const pool = [...DEFAULT_NAME_POOL];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, n);
+}
+
 const savedNames = localStorage.getItem("wheel.names");
-if (savedNames !== null && savedNames.trim()) namesInput.value = savedNames;
+namesInput.value =
+  savedNames !== null && savedNames.trim()
+    ? savedNames
+    : randomDefaults().join("\n");
 
 namesInput.addEventListener("input", () => { if (!state.spinning) parseNames(); });
 
@@ -147,6 +169,14 @@ $("clearBtn").addEventListener("click", () => {
 let savedLists = JSON.parse(localStorage.getItem("wheel.lists") || "[]");
 let currentListName = localStorage.getItem("wheel.currentList") || "";
 let listsOffline = false; // true once a server call has failed
+let firstListLoad = true; // auto-load the first saved list once, on boot
+let listsReady = false; // becomes true after the initial server load settles
+let listSyncTimer = null; // debounces auto-saving the active list
+
+// Compare two name lists by membership (order-independent), so reordering
+// (Shuffle/Sort) doesn't count as a change but adding/removing names does.
+const membersKey = (arr) =>
+  [...arr].sort((a, b) => a.localeCompare(b)).join("\n");
 
 const saveForm = $("saveForm");
 const saveNameInput = $("saveNameInput");
@@ -180,7 +210,45 @@ async function fetchLists() {
   } catch (err) {
     listsOffline = true; // keep showing the cached copy
   }
+  autoLoadFirstList();
   renderSavedLists();
+  listsReady = true; // edits from here on auto-save to the active list
+}
+
+// On first load, populate the wheel from the first saved list instead of the
+// static placeholder names. Falls back to the placeholders if no lists exist.
+function autoLoadFirstList() {
+  if (!firstListLoad) return;
+  firstListLoad = false;
+  if (savedLists.length === 0) return;
+  const first = savedLists[0];
+  currentListName = first.name;
+  setNames([...first.names]); // updates the textarea, wheel, and cache
+  cacheLists();
+}
+
+// Auto-save the active list whenever its membership changes (e.g. a winner is
+// removed, or names are edited). Debounced so typing doesn't spam the server.
+function syncActiveList() {
+  if (!listsReady) return; // don't sync until the server load has settled
+  const active = savedLists.find((l) => l.name === currentListName);
+  if (!active) return; // no active list — nothing to keep in sync
+  if (membersKey(active.names) === membersKey(state.names)) return; // unchanged
+  active.names = [...state.names]; // optimistic local update
+  cacheLists();
+  clearTimeout(listSyncTimer);
+  listSyncTimer = setTimeout(async () => {
+    try {
+      await api("/api/lists", {
+        method: "POST",
+        body: JSON.stringify({ name: active.name, names: active.names }),
+      });
+      listsOffline = false;
+    } catch (err) {
+      listsOffline = true;
+      renderSavedLists();
+    }
+  }, 500);
 }
 
 function renderSavedLists() {
@@ -206,7 +274,7 @@ function renderSavedLists() {
     const li = document.createElement("li");
     const isActive = list.name === currentListName;
     const isModified =
-      isActive && JSON.stringify(list.names) !== JSON.stringify(state.names);
+      isActive && membersKey(list.names) !== membersKey(state.names);
     if (isActive) li.classList.add("active");
 
     const load = document.createElement("button");
@@ -844,7 +912,6 @@ $("removeBtn").addEventListener("click", () => {
     setNames(arr);
   }
   hideWinner();
-  spin();
 });
 
 function launchConfetti() {
