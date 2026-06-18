@@ -1,0 +1,10 @@
+{
+  "name": "wheel-of-suspense",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Random name picker with dramatic commentary — server-backed saved lists & winners.",
+  "dependencies": {
+    "@upstash/redis": "^1.34.3"
+  }
+}

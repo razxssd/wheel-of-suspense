@@ -77,6 +77,24 @@ function flapPointer() {
 }
 
 // ---------------------------------------------------------------------
+// Server sync — saved lists & winners live on the server (Upstash Redis
+// via /api). localStorage is kept as an offline cache so the app still
+// works when opened straight from disk or while the network is down.
+// ---------------------------------------------------------------------
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  return res.json();
+}
+
+const uid = () =>
+  (crypto.randomUUID && crypto.randomUUID()) ||
+  `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+// ---------------------------------------------------------------------
 // Names handling
 // ---------------------------------------------------------------------
 function parseNames() {
@@ -128,18 +146,53 @@ $("clearBtn").addEventListener("click", () => {
 // ---------------------------------------------------------------------
 let savedLists = JSON.parse(localStorage.getItem("wheel.lists") || "[]");
 let currentListName = localStorage.getItem("wheel.currentList") || "";
+let listsOffline = false; // true once a server call has failed
 
 const saveForm = $("saveForm");
 const saveNameInput = $("saveNameInput");
 
-function persistLists() {
+// Write-through cache: localStorage mirrors the last known server state so the
+// app degrades gracefully offline.
+function cacheLists() {
   localStorage.setItem("wheel.lists", JSON.stringify(savedLists));
   localStorage.setItem("wheel.currentList", currentListName);
+}
+
+// Pull the shared lists from the server on boot. If the server is empty but we
+// have local lists (first run after enabling sync), seed them up so nothing is
+// lost on migration.
+async function fetchLists() {
+  const cached = savedLists;
+  try {
+    const { lists } = await api("/api/lists");
+    if ((!lists || lists.length === 0) && cached.length > 0) {
+      await Promise.all(
+        cached.map((l) =>
+          api("/api/lists", { method: "POST", body: JSON.stringify(l) })
+        )
+      );
+      savedLists = cached;
+    } else {
+      savedLists = lists;
+    }
+    listsOffline = false;
+    cacheLists();
+  } catch (err) {
+    listsOffline = true; // keep showing the cached copy
+  }
+  renderSavedLists();
 }
 
 function renderSavedLists() {
   const ul = $("savedLists");
   ul.innerHTML = "";
+
+  if (listsOffline) {
+    const note = document.createElement("li");
+    note.className = "empty offline";
+    note.textContent = "⚠ Offline — showing the last synced copy.";
+    ul.appendChild(note);
+  }
 
   if (savedLists.length === 0) {
     const li = document.createElement("li");
@@ -182,26 +235,38 @@ function renderSavedLists() {
   }
 }
 
-function saveCurrentList(name) {
+async function saveCurrentList(name) {
   name = name.trim();
   if (!name || state.names.length === 0) {
     saveNameInput.focus();
     return;
   }
+  const names = [...state.names];
+
+  // Optimistic local update so the UI feels instant…
   const existing = savedLists.find((l) => l.name === name);
   if (existing) {
-    existing.names = [...state.names];
+    existing.names = names;
   } else {
-    savedLists.push({ name, names: [...state.names] });
+    savedLists.push({ name, names });
   }
   currentListName = name;
-  persistLists();
+  cacheLists();
   renderSavedLists();
   saveForm.classList.add("hidden");
 
+  // …then push to the server.
   const btn = $("saveListBtn");
-  btn.textContent = "✓ Saved";
-  setTimeout(() => { btn.textContent = "💾 Save"; }, 1200);
+  try {
+    await api("/api/lists", { method: "POST", body: JSON.stringify({ name, names }) });
+    listsOffline = false;
+    btn.textContent = "✓ Saved";
+  } catch (err) {
+    listsOffline = true;
+    btn.textContent = "⚠ Saved locally";
+    renderSavedLists();
+  }
+  setTimeout(() => { btn.textContent = "💾 Save"; }, 1400);
 }
 
 function loadList(name) {
@@ -213,16 +278,23 @@ function loadList(name) {
     if (!confirm(`Replace the current participants with "${name}"?`)) return;
   }
   currentListName = name;
-  persistLists();
+  cacheLists();
   setNames([...list.names]);
 }
 
-function deleteList(name) {
+async function deleteList(name) {
   if (!confirm(`Delete the saved list "${name}"?`)) return;
   savedLists = savedLists.filter((l) => l.name !== name);
   if (currentListName === name) currentListName = "";
-  persistLists();
+  cacheLists();
   renderSavedLists();
+  try {
+    await api(`/api/lists?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+    listsOffline = false;
+  } catch (err) {
+    listsOffline = true;
+    renderSavedLists();
+  }
 }
 
 $("saveListBtn").addEventListener("click", () => {
@@ -244,32 +316,98 @@ saveNameInput.addEventListener("keydown", (e) => {
 // ---------------------------------------------------------------------
 // History
 // ---------------------------------------------------------------------
+let historyOffline = false;
+
+function cacheHistory() {
+  localStorage.setItem("wheel.history", JSON.stringify(state.history.slice(-50)));
+}
+
 function renderHistory() {
   const ul = $("historyList");
   ul.innerHTML = "";
   state.history.slice(-8).reverse().forEach((h) => {
     const li = document.createElement("li");
+
     const name = document.createElement("span");
     name.textContent = `🏆 ${h.name}`;
+
+    const meta = document.createElement("span");
+    meta.className = "meta";
+
     const when = document.createElement("span");
     when.className = "when";
     when.textContent = h.when;
-    li.append(name, when);
+
+    const del = document.createElement("button");
+    del.className = "mini-btn del-winner";
+    del.title = `Remove "${h.name}" from winners`;
+    del.textContent = "✕";
+    del.addEventListener("click", () => deleteWinner(h.id));
+
+    meta.append(when, del);
+    li.append(name, meta);
     ul.appendChild(li);
   });
 }
 
-function addToHistory(name) {
+async function addToHistory(name) {
   const when = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  state.history.push({ name, when });
-  localStorage.setItem("wheel.history", JSON.stringify(state.history.slice(-50)));
+  const entry = { id: uid(), name, when };
+  state.history.push(entry);
+  cacheHistory();
+  renderHistory();
+  try {
+    await api("/api/history", { method: "POST", body: JSON.stringify(entry) });
+    historyOffline = false;
+  } catch (err) {
+    historyOffline = true;
+  }
+}
+
+async function deleteWinner(id) {
+  state.history = state.history.filter((h) => h.id !== id);
+  cacheHistory();
+  renderHistory();
+  try {
+    await api(`/api/history?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    historyOffline = false;
+  } catch (err) {
+    historyOffline = true;
+  }
+}
+
+// Pull shared winners on boot; seed the server from local cache on first run.
+async function fetchHistory() {
+  const cached = state.history.map((h) => (h.id ? h : { ...h, id: uid() }));
+  try {
+    const { history } = await api("/api/history");
+    if ((!history || history.length === 0) && cached.length > 0) {
+      for (const entry of cached) {
+        await api("/api/history", { method: "POST", body: JSON.stringify(entry) });
+      }
+      state.history = cached;
+    } else {
+      state.history = history;
+    }
+    historyOffline = false;
+    cacheHistory();
+  } catch (err) {
+    historyOffline = true;
+    state.history = cached;
+  }
   renderHistory();
 }
 
-$("clearHistoryBtn").addEventListener("click", () => {
+$("clearHistoryBtn").addEventListener("click", async () => {
   state.history = [];
-  localStorage.setItem("wheel.history", "[]");
+  cacheHistory();
   renderHistory();
+  try {
+    await api("/api/history", { method: "DELETE" });
+    historyOffline = false;
+  } catch (err) {
+    historyOffline = true;
+  }
 });
 
 // ---------------------------------------------------------------------
@@ -776,6 +914,10 @@ function launchConfetti() {
 parseNames();
 renderHistory();
 sizeCanvas();
+
+// Sync shared state from the server (renders cached copies above first).
+fetchLists();
+fetchHistory();
 
 // gentle idle drift so the wheel feels alive between spins
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

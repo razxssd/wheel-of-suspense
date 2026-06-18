@@ -274,7 +274,23 @@ body {
   justify-content: space-between;
   color: var(--text);
 }
+.history li .meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .history li .when { color: var(--text-dim); font-size: 0.75rem; }
+.history li .del-winner {
+  font-size: 0.8rem;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.history li:hover .del-winner,
+.history li:focus-within .del-winner { opacity: 1; }
+
+.saved-lists .empty.offline { color: var(--accent); }
 
 /* ===================== Wheel stage ===================== */
 .stage {
