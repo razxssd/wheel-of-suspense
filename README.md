@@ -3,7 +3,7 @@
 A random name picker with dramatic flair — spin the wheel and let suspenseful,
 randomly-styled live commentary tease who's about to get chosen.
 
-**[▶ Try it live](https://wheel-of-suspense.vercel.app/)** <!-- update with your real Vercel URL after the first deploy -->
+**[▶ Try it live](https://wheel-of-suspense.vercel.app/)**
 
 > Hosted on Vercel — saved lists & winners are shared server-side (see below).
 
